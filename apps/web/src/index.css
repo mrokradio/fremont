@@ -1,0 +1,83 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: 'Lato', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 20px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+  font-variation-settings:
+    'FILL' 0,
+    'wght' 400,
+    'GRAD' 0,
+    'opsz' 24;
+}
+
+/* App shell helpers */
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.app-grid {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  width: 100%;
+}
+
+.app-sidebar {
+  grid-area: sidebar;
+  overflow: hidden;
+}
+
+.app-topbar {
+  grid-area: topbar;
+  overflow: visible;
+}
+
+.app-main {
+  grid-area: main;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  overflow: auto;
+}
+
+@media (min-width: 1024px) {
+  html,
+  body,
+  #root {
+    overflow: hidden; /* prevent page-level scroll on wide layouts */
+  }
+
+  .app-grid {
+    display: grid;
+    grid-template-columns: 16rem minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+      'sidebar topbar'
+      'sidebar main';
+    height: 100dvh; /* lock to viewport height */
+    overflow: hidden; /* contain scrolling within areas */
+  }
+}

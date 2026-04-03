@@ -1,0 +1,274 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "darwin", "darwin-arm64", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum TransactionCategory {
+  Capital_Call
+  Distribution
+  Fee
+  Interest
+  Dividend
+  Transfer
+  Expense
+  Other
+}
+
+enum UserRole {
+  ADMIN
+  ANALYST
+  VIEWER
+}
+
+enum IngestionType {
+  Position
+  Transaction
+}
+
+enum IngestionMode {
+  APPEND
+  REPLACE
+}
+
+enum CashflowItemKind {
+  Income
+  Outflow
+}
+
+enum StrategyKind {
+  Liquidity_Program
+  OpCos
+  BF_Global
+  Opportunities_Fund
+}
+
+enum AccountProvider {
+  Password
+  Google
+  Microsoft
+}
+
+model PortfolioSnapshot {
+  id                String            @id @default(cuid())
+  asOf              DateTime
+  netWorth          Float
+  liquidity         Float
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  allocation        AllocationSlice[]
+  upcomingCashflows Cashflow[]
+
+  @@index([asOf])
+}
+
+model AllocationSlice {
+  id         String  @id @default(cuid())
+  snapshotId String
+  assetClass String
+  percent    Float
+
+  snapshot PortfolioSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+
+  @@index([snapshotId])
+}
+
+model Cashflow {
+  id          String   @id @default(cuid())
+  snapshotId  String
+  date        DateTime
+  amount      Float
+  description String
+
+  snapshot PortfolioSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+
+  @@index([snapshotId])
+  @@index([date])
+}
+
+model Position {
+  id         String   @id @default(cuid())
+  name       String
+  assetClass String
+  year       Int?
+  value      Float
+  costBasis  Float?
+  irr        Float?
+  tags       Json?
+  liquid     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Transaction {
+  id          String              @id @default(cuid())
+  date        DateTime
+  description String
+  amount      Float
+  category    TransactionCategory
+  tags        Json?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@index([date])
+}
+
+model User {
+  id           String             @id @default(cuid())
+  email        String             @unique
+  name         String
+  passwordHash String
+  role         UserRole           @default(VIEWER)
+  scenarios    PlanningScenario[]
+  ingestionJobs IngestionJob[]
+  financialProfile FinancialProfile?
+  planningCashflows PlanningCashflowItem[]
+  strategyExposures StrategyExposure[]
+  assets       Asset[]
+  contactProfile UserContactProfile?
+  accountAssociations UserAccountAssociation[]
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+}
+
+model Asset {
+  id        String   @id @default(cuid())
+  ownerId   String
+  name      String
+  category  String
+  value     Float
+  liquid    Boolean  @default(false)
+  owner     String?
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId])
+  @@index([ownerId, category])
+}
+
+model PlanningScenario {
+  id            String   @id @default(cuid())
+  name          String
+  startYear     Int
+  horizonYears  Int
+  baseNetWorth  Float
+  baseLiquidity Float
+  inputs        Json
+  events        Json
+  ownerId       String
+  owner         User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([ownerId])
+  @@index([createdAt])
+}
+
+model IngestionJob {
+  id            String         @id @default(cuid())
+  type          IngestionType
+  mode          IngestionMode  @default(APPEND)
+  dryRun        Boolean        @default(true)
+  imported      Int            @default(0)
+  errors        Json?
+  requestedById String?
+  requestedBy   User?          @relation(fields: [requestedById], references: [id], onDelete: SetNull)
+  createdAt     DateTime       @default(now())
+
+  @@index([requestedById])
+  @@index([createdAt])
+}
+
+model FinancialProfile {
+  id            String   @id @default(cuid())
+  ownerId       String   @unique
+  baseNetWorth  Float
+  baseLiquidity Float
+  assumptions   Json
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  owner         User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+}
+
+model PlanningCashflowItem {
+  id        String           @id @default(cuid())
+  ownerId   String
+  kind      CashflowItemKind
+  name      String
+  amount    Float
+  startYear Int
+  endYear   Int
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  owner     User             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId])
+  @@index([ownerId, kind])
+  @@index([startYear, endYear])
+}
+
+model StrategyExposure {
+  id        String       @id @default(cuid())
+  ownerId   String
+  strategy  StrategyKind
+  capital   Float
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  owner     User         @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId])
+  @@unique([ownerId, strategy])
+}
+
+model StrategyBenchmark {
+  id                   String       @id @default(cuid())
+  strategy             StrategyKind
+  year                 Int
+  targetReturnRate     Float
+  actualReturnRate     Float
+  plannedLiquidityRate Float
+  actualLiquidityRate  Float
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+
+  @@index([year])
+  @@unique([strategy, year])
+}
+
+model UserContactProfile {
+  id             String   @id @default(cuid())
+  ownerId        String   @unique
+  phone          String?
+  secondaryEmail String?
+  title          String?
+  company        String?
+  location       String?
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId])
+}
+
+model UserAccountAssociation {
+  id         String          @id @default(cuid())
+  ownerId    String
+  provider   AccountProvider
+  identifier String
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  user       User            @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId])
+  @@index([ownerId, provider])
+  @@unique([ownerId, provider, identifier])
+}

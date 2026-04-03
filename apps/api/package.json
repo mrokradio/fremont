@@ -1,0 +1,53 @@
+{
+  "name": "@fremont/api",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=20 <21"
+  },
+  "type": "commonjs",
+  "scripts": {
+    "dev": "sh -c 'pnpm --filter @fremont/shared build && nest start --watch; code=$?; [ $code -eq 0 ] || [ $code -eq 130 ] || [ $code -eq 143 ]'",
+    "build": "nest build",
+    "start": "node dist/main.js",
+    "lint": "eslint src --ext .ts",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:cov": "jest --coverage",
+    "db:generate": "sh -ac 'if [ -f ../../.env ]; then set -a; . ../../.env; set +a; fi; pnpm exec prisma generate'",
+    "db:migrate": "sh -ac 'if [ -f ../../.env ]; then set -a; . ../../.env; set +a; fi; pnpm exec prisma migrate dev --name init --skip-generate'",
+    "db:migrate:deploy": "sh -ac 'if [ -f ../../.env ]; then set -a; . ../../.env; set +a; fi; pnpm exec prisma migrate deploy'",
+    "db:seed": "sh -ac 'if [ -f ../../.env ]; then set -a; . ../../.env; set +a; fi; node prisma/seed.mjs'"
+  },
+  "dependencies": {
+    "@fremont/shared": "workspace:*",
+    "@nestjs/common": "^10.4.0",
+    "@nestjs/config": "^3.2.3",
+    "@nestjs/core": "^10.4.0",
+    "@nestjs/platform-express": "^10.4.0",
+    "@nestjs/swagger": "^11.2.6",
+    "@nestjs/throttler": "^6.5.0",
+    "@prisma/client": "^5.20.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.1",
+    "csv-parse": "^6.2.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^10.4.0",
+    "@nestjs/schematics": "^10.1.4",
+    "@nestjs/testing": "^10.4.0",
+    "@types/express": "^5.0.6",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.5.4",
+    "jest": "^30.3.0",
+    "prisma": "^5.20.0",
+    "ts-jest": "^29.4.6",
+    "tsx": "^4.19.1",
+    "typescript": "^5.5.4"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.mjs"
+  }
+}

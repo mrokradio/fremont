@@ -1,0 +1,2 @@
+ALTER TABLE `Position`
+ADD COLUMN `year` INTEGER NULL;
