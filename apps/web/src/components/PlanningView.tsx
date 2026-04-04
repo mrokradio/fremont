@@ -350,7 +350,20 @@ export function PlanningView({
       }
 
       if (scenarioRes.status === 'fulfilled' && scenarioRes.value.length > 0) {
-        const mapped = scenarioRes.value.map(fromApiScenario);
+        const mapped = scenarioRes.value.map((remote) => {
+          const s = fromApiScenario(remote);
+          // Backfill portfolio values into scenarios that were saved before positions/assets were entered
+          if (s.baseNetWorth === 0 && s.baseLiquidity === 0 && (baseNetWorth > 0 || baseLiquidity > 0)) {
+            return { ...s, baseNetWorth, baseLiquidity };
+          }
+          return s;
+        });
+        // Sync any patched scenarios back to the server
+        mapped.forEach((s, i) => {
+          if (s.baseNetWorth !== scenarioRes.value[i].baseNetWorth || s.baseLiquidity !== scenarioRes.value[i].baseLiquidity) {
+            void api.updateScenario(s.id, toScenarioWriteInput(s)).catch(() => {});
+          }
+        });
         setScenarios(mapped);
         persistScenarios(mapped);
         setCurrentId((prev) => (mapped.some((scenario) => scenario.id === prev) ? prev : mapped[0].id));
