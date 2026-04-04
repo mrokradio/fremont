@@ -63,6 +63,24 @@ while read -r cidr; do
     ipset add allowed-domains "$cidr"
 done < <(echo "$gh_ranges" | jq -r '(.web + .api + .git)[]' | aggregate -q)
 
+# Fetch Google IP ranges and add them
+echo "Fetching Google IP ranges..."
+google_ranges=$(curl -s https://www.gstatic.com/ipranges/goog.json)
+if [ -z "$google_ranges" ]; then
+    echo "ERROR: Failed to fetch Google IP ranges"
+    exit 1
+fi
+
+echo "Processing Google IPs..."
+while read -r cidr; do
+    if [[ ! "$cidr" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/[0-9]{1,2}$ ]]; then
+        echo "Skipping non-IPv4 range: $cidr"
+        continue
+    fi
+    echo "Adding Google range $cidr"
+    ipset add allowed-domains "$cidr"
+done < <(echo "$google_ranges" | jq -r '.prefixes[].ipv4Prefix // empty')
+
 # Resolve and add other allowed domains
 for domain in \
     "registry.npmjs.org" \

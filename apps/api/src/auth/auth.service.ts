@@ -239,21 +239,27 @@ export class AuthService {
     let user = await this.prisma.user.findUnique({ where: { email } });
 
     if (!user) {
-      user = await this.prisma.user.create({
-        data: {
-          email,
-          name,
-          passwordHash: hashPassword(randomBytes(32).toString('hex')),
-          role: defaultRole,
-          accountAssociations: {
-            create: {
-              provider,
-              identifier: email,
+      try {
+        user = await this.prisma.user.create({
+          data: {
+            email,
+            name,
+            passwordHash: hashPassword(randomBytes(32).toString('hex')),
+            role: defaultRole,
+            accountAssociations: {
+              create: {
+                provider,
+                identifier: email,
+              },
             },
           },
-        },
-      });
-      return user;
+        });
+        return user;
+      } catch (err: any) {
+        if (err?.code !== 'P2002') throw err;
+        // Another request created the user between our findUnique and create — fetch it
+        user = await this.prisma.user.findUniqueOrThrow({ where: { email } });
+      }
     }
 
     await this.ensureOrValidateAssociation(user, provider, email);
