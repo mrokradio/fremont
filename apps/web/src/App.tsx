@@ -371,6 +371,7 @@ export function App() {
               baseNetWorth={baseNetWorth}
               baseLiquidity={baseLiquidity}
               workspace={workspace}
+              positions={positions}
             />
           </section>
         )}

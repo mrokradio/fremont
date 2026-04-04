@@ -241,9 +241,9 @@ export const api = {
   removeUserAccountAssociation: (id: string) =>
     request<UserProfileResponse>(`/users/me/profile/associations/${id}`, { method: 'DELETE', auth: true }),
 
-  dashboard: () => request<DashboardResponse>('/portfolio/dashboard'),
+  dashboard: () => request<DashboardResponse>('/portfolio/dashboard', { auth: true }),
 
-  positions: () => request<Position[]>('/portfolio/positions'),
+  positions: () => request<Position[]>('/portfolio/positions', { auth: true }),
   createPosition: (input: PositionWriteInput) => request<Position>('/portfolio/positions', { method: 'POST', body: input, auth: true }),
   updatePosition: (id: string, input: PositionWriteInput) => request<Position>(`/portfolio/positions/${id}`, { method: 'PUT', body: input, auth: true }),
   deletePosition: (id: string) => request<{ status: 'ok' }>(`/portfolio/positions/${id}`, { method: 'DELETE', auth: true }),
@@ -253,7 +253,7 @@ export const api = {
   updateAsset: (id: string, input: AssetWriteInput) => request<AssetRecord>(`/assets/${id}`, { method: 'PUT', body: input, auth: true }),
   deleteAsset: (id: string) => request<{ status: 'ok' }>(`/assets/${id}`, { method: 'DELETE', auth: true }),
 
-  transactions: () => request<Transaction[]>('/portfolio/transactions'),
+  transactions: () => request<Transaction[]>('/portfolio/transactions', { auth: true }),
   createTransaction: (input: TransactionWriteInput) => request<Transaction>('/portfolio/transactions', { method: 'POST', body: input, auth: true }),
   updateTransaction: (id: string, input: TransactionWriteInput) => request<Transaction>(`/portfolio/transactions/${id}`, { method: 'PUT', body: input, auth: true }),
   deleteTransaction: (id: string) => request<{ status: 'ok' }>(`/portfolio/transactions/${id}`, { method: 'DELETE', auth: true }),

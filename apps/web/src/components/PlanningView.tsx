@@ -5,8 +5,8 @@ import type {
   PlanningCashflowStore,
   PlanningScenario,
   PlanningScenarioWriteInput,
-  ProjectionPoint,
-  ProjectionResponse,
+  Position,
+  StrategyBenchmark,
 } from '@fremont/shared';
 import { LOCAL_STORAGE_KEYS } from '@fremont/shared';
 import type { PlanEvent, PlanningAsset, PlanningAssetKind } from '../types/models';
@@ -20,6 +20,7 @@ type Props = {
   baseNetWorth: number; // starting total net worth
   baseLiquidity: number; // starting liquidity (subset of net worth)
   workspace?: FinancialWorkspaceResponse | null;
+  positions?: Position[];
 };
 
 const ASSETS: Record<PlanningAssetKind, PlanningAsset> = {
@@ -93,8 +94,10 @@ export function PlanningView({
   baseNetWorth,
   baseLiquidity,
   workspace = null,
+  positions = [],
 }: Props) {
   const [zoomStep, setZoomStep] = useState<ZoomStep>(1);
+  const [strategyBenchmarks, setStrategyBenchmarks] = useState<StrategyBenchmark[]>([]);
   const [dragMode, setDragMode] = useState<'asset' | 'event' | null>(null);
   type CashItem = { id: string; name: string; amount: number; start: number; end: number };
   type ModalState = {
@@ -165,7 +168,7 @@ export function PlanningView({
     'Real Estate': { cost: '$1,500,000', recurring: '$25,000', duration: '10', color: ASSET_COLORS['Real Estate'] },
     Car: { cost: '$50,000', duration: '5', color: ASSET_COLORS.Car },
     Boat: { cost: '$250,000', duration: '10', color: ASSET_COLORS.Boat },
-    Airplane: { cost: '$2,000,000', recurring: '$500,000', lifeYears: '10', residualPct: '20', color: ASSET_COLORS.Airplane },
+    Airplane: { cost: '$2,000,000', recurring: '$500,000', duration: '10', lifeYears: '10', residualPct: '20', color: ASSET_COLORS.Airplane },
     Travel: { cost: '$5,000', duration: '1', color: ASSET_COLORS.Travel },
     School: { cost: '$50,000', recurring: '$50,000', recurringInc: '5.0', duration: '3', color: ASSET_COLORS.School },
     OpCos: { opAction: 'buy', opAmount: '$100,000', color: ASSET_COLORS.OpCos },
@@ -288,7 +291,6 @@ export function PlanningView({
 
   const [currentId, setCurrentId] = useState<string>(() => scenarios[0]?.id);
   const [remoteSyncEnabled, setRemoteSyncEnabled] = useState(false);
-  const [projectionCache, setProjectionCache] = useState<Record<string, ProjectionResponse>>({});
   const currentScenario = useMemo(() => scenarios.find((scenario) => scenario.id === currentId), [scenarios, currentId]);
   const scenarioStartYear = currentScenario?.startYear ?? startYear;
   const scenarioHorizonYears = currentScenario?.horizonYears ?? horizonYears;
@@ -323,6 +325,10 @@ export function PlanningView({
   }, [remoteSyncEnabled, replaceScenarioId]);
 
   useEffect(() => {
+    api.strategyBenchmarks().then(setStrategyBenchmarks).catch(() => {});
+  }, []);
+
+  useEffect(() => {
     setTaxRateText((scenarioTaxRate * 100).toFixed(1));
   }, [scenarioTaxRate, currentId]);
 
@@ -352,9 +358,11 @@ export function PlanningView({
       if (scenarioRes.status === 'fulfilled' && scenarioRes.value.length > 0) {
         const mapped = scenarioRes.value.map((remote) => {
           const s = fromApiScenario(remote);
-          // Backfill portfolio values into scenarios that were saved before positions/assets were entered
-          if (s.baseNetWorth === 0 && s.baseLiquidity === 0 && (baseNetWorth > 0 || baseLiquidity > 0)) {
-            return { ...s, baseNetWorth, baseLiquidity };
+          // Backfill portfolio values into scenarios that were saved before positions/assets were entered.
+          // Use baseNetWorth for both fields so the full portfolio value drives the forecast,
+          // regardless of which positions are individually marked liquid.
+          if (s.baseNetWorth === 0 && s.baseLiquidity === 0 && baseNetWorth > 0) {
+            return { ...s, baseNetWorth, baseLiquidity: baseNetWorth };
           }
           return s;
         });
@@ -376,8 +384,8 @@ export function PlanningView({
           const target = idx === -1 ? 0 : idx;
           next[target] = {
             ...next[target],
-            baseNetWorth: Number.isFinite(baseNetWorth) ? baseNetWorth : profile.baseNetWorth,
-            baseLiquidity: Number.isFinite(baseLiquidity) ? baseLiquidity : profile.baseLiquidity,
+            baseNetWorth: baseNetWorth > 0 ? baseNetWorth : profile.baseNetWorth,
+            baseLiquidity: baseNetWorth > 0 ? baseNetWorth : profile.baseLiquidity,
             taxRate: Math.max(0, Math.min(1, Number(profile.assumptions?.taxRate ?? 0))),
             taxBasis: profile.assumptions?.taxBasis === 'net_income' ? 'net_income' : 'gross_income',
           };
@@ -475,32 +483,6 @@ export function PlanningView({
       })
       .catch(() => {});
   }, [remoteSyncEnabled, currentScenario?.id, currentScenario?.baseNetWorth, currentScenario?.baseLiquidity, currentScenario?.taxRate, currentScenario?.taxBasis]);
-
-  useEffect(() => {
-    if (!remoteSyncEnabled) return;
-    const base = scenarios.find((scenario) => scenario.name === 'Base Case') ?? scenarios[0];
-    const ids = Array.from(new Set([currentId, base?.id].filter((value): value is string => !!value)));
-    if (ids.length === 0) return;
-
-    let active = true;
-    (async () => {
-      const results = await Promise.allSettled(ids.map((id) => api.projectionScenario(id)));
-      if (!active) return;
-      setProjectionCache((prev) => {
-        const next = { ...prev };
-        results.forEach((result, idx) => {
-          if (result.status === 'fulfilled') {
-            next[ids[idx]] = result.value;
-          }
-        });
-        return next;
-      });
-    })();
-
-    return () => {
-      active = false;
-    };
-  }, [remoteSyncEnabled, currentId, scenarios]);
 
   const setEvents = useCallback((updater: SetStateAction<PlanEvent[]>) => {
     setScenarios((prev) => {
@@ -710,6 +692,7 @@ export function PlanningView({
     year: number;
     income: number;
     outflow: number;
+    eventOutflow: number; // cash cost of asset events this year (capex + opex)
     taxes: number;
     baseDelta: number;
     eventImpactNetWorth: number;
@@ -722,46 +705,44 @@ export function PlanningView({
     events: PlanEvent[];
   };
 
-  const projectionToForecast = useCallback(
-    (
-      points: ProjectionPoint[],
-      seedNetWorth: number,
-      seedLiquidity: number,
-      plannedEvents: PlanEvent[],
-    ): ForecastPoint[] => {
-      const ordered = [...points].sort((a, b) => a.year - b.year);
-      let prevNetWorth = seedNetWorth;
-      let prevLiquidity = seedLiquidity;
-      return ordered.map((point) => {
-        const baseDelta = point.income - point.outflow - point.taxes;
-        const netChangeNetWorth = point.netWorth - prevNetWorth;
-        const netChangeLiquidity = point.liquidity - prevLiquidity;
-        const eventImpactNetWorth = netChangeNetWorth - baseDelta;
-        const eventImpactLiquidity = netChangeLiquidity - baseDelta;
-        const activeEvents = plannedEvents.filter(
-          (event) => point.year >= event.year && point.year < event.year + (event.duration ?? 1),
-        );
-        prevNetWorth = point.netWorth;
-        prevLiquidity = point.liquidity;
-        return {
-          year: point.year,
-          income: point.income,
-          outflow: point.outflow,
-          taxes: point.taxes,
-          baseDelta,
-          eventImpactNetWorth,
-          eventImpactLiquidity,
-          netWorth: point.netWorth,
-          liquidity: point.liquidity,
-          nonLiquid: point.nonLiquid,
-          netChangeNetWorth,
-          netChangeLiquidity,
-          events: activeEvents,
-        };
-      });
-    },
-    [],
-  );
+  // Per-year compounded dollar growth from strategy positions using benchmark return rates.
+  // For years with actual data, uses actualReturnRate; beyond that, falls back to the
+  // strategy's most recent targetReturnRate.
+  const strategyGrowthByYear = useMemo<Map<number, number>>(() => {
+    const stratPositions = positions.filter((p) => p.tags?.includes('fremont-strategy') && (p.value ?? 0) > 0);
+    if (stratPositions.length === 0 || strategyBenchmarks.length === 0) return new Map();
+
+    // Latest known target rate per strategy for years beyond the benchmark data
+    const latestTarget = new Map<string, { rate: number; year: number }>();
+    for (const b of strategyBenchmarks) {
+      const prev = latestTarget.get(b.strategy);
+      if (prev === undefined || b.year >= prev.year) {
+        latestTarget.set(b.strategy, { rate: b.targetReturnRate, year: b.year });
+      }
+    }
+
+    const bmMap = new Map(strategyBenchmarks.map((b) => [`${b.strategy}|${b.year}`, b]));
+
+    // Track each strategy's accumulated value through the forecast years (compounding)
+    const accumulated = new Map(stratPositions.map((p) => [p.name, p.value ?? 0]));
+
+    const result = new Map<number, number>();
+    for (const year of years) {
+      let totalGrowth = 0;
+      for (const pos of stratPositions) {
+        const bm = bmMap.get(`${pos.name}|${year}`);
+        const rate = bm
+          ? year <= selectedYear ? bm.actualReturnRate : bm.targetReturnRate
+          : (latestTarget.get(pos.name)?.rate ?? 0);
+        const current = accumulated.get(pos.name) ?? 0;
+        const growth = current * rate;
+        accumulated.set(pos.name, current + growth);
+        totalGrowth += growth;
+      }
+      result.set(year, totalGrowth);
+    }
+    return result;
+  }, [positions, strategyBenchmarks, years, selectedYear]);
 
   const computeForecastYearly = useCallback((
     seedNetWorth: number,
@@ -775,6 +756,7 @@ export function PlanningView({
     let liquidity = seedLiquidity;
 
     for (const year of years) {
+      const portfolioReturn = strategyGrowthByYear.get(year) ?? 0;
       const income = incomeItems.reduce((sum, item) => (year >= item.start && year <= item.end ? sum + item.amount : sum), 0);
       const outflow = outflowItems.reduce((sum, item) => (year >= item.start && year <= item.end ? sum + item.amount : sum), 0);
       const taxRate = Math.max(0, Math.min(1, taxRateAssumption));
@@ -782,10 +764,11 @@ export function PlanningView({
         ? Math.max(0, income - outflow)
         : Math.max(0, income);
       const taxes = taxableIncome * taxRate;
-      const baseDelta = income - outflow - taxes;
+      const baseDelta = income - outflow - taxes + portfolioReturn;
 
       let eventImpactNetWorth = 0;
       let eventImpactLiquidity = 0;
+      let eventOutflow = 0;
       const activeEvents = plannedEvents.filter((event) => year >= event.year && year < event.year + (event.duration ?? 1));
 
       for (const event of activeEvents) {
@@ -805,10 +788,14 @@ export function PlanningView({
         }
 
         if (assetMeta.behavior === 'capital') {
-          if (year === event.year && oneTime > 0) eventImpactLiquidity -= oneTime;
+          if (year === event.year && oneTime > 0) {
+            eventImpactLiquidity -= oneTime;
+            eventOutflow += oneTime; // capex: cash out
+          }
           if (recurring > 0) {
             eventImpactLiquidity -= recurring;
             eventImpactNetWorth -= recurring;
+            eventOutflow += recurring; // opex: cash out
           }
           if (event.asset === 'Airplane' && event.usefulLifeYears && event.usefulLifeYears > 0) {
             const residual = (event.residualPct ?? 0) * oneTime;
@@ -816,16 +803,19 @@ export function PlanningView({
             const annualDepreciation = depreciable / event.usefulLifeYears;
             if (yearsSinceStart >= 0 && yearsSinceStart < event.usefulLifeYears) {
               eventImpactNetWorth -= annualDepreciation;
+              // depreciation is non-cash; not added to eventOutflow
             }
           }
         } else {
           if (year === event.year && oneTime > 0) {
             eventImpactLiquidity -= oneTime;
             eventImpactNetWorth -= oneTime;
+            eventOutflow += oneTime; // capex: cash out
           }
           if (recurring > 0) {
             eventImpactLiquidity -= recurring;
             eventImpactNetWorth -= recurring;
+            eventOutflow += recurring; // opex: cash out
           }
         }
       }
@@ -842,6 +832,7 @@ export function PlanningView({
         year,
         income,
         outflow,
+        eventOutflow,
         taxes,
         baseDelta,
         eventImpactNetWorth,
@@ -856,18 +847,9 @@ export function PlanningView({
     }
 
     return points;
-  }, [years, incomeItems, outflowItems]);
+  }, [years, incomeItems, outflowItems, strategyGrowthByYear]);
 
-  const currentProjection = currentScenario ? projectionCache[currentScenario.id] : undefined;
   const forecastYearly = useMemo(() => {
-    if (currentProjection?.points?.length) {
-      return projectionToForecast(
-        currentProjection.points,
-        currentProjection.baseNetWorth,
-        currentProjection.baseLiquidity,
-        events,
-      );
-    }
     return computeForecastYearly(
       scenarioBaseNetWorth,
       scenarioBaseLiquidity,
@@ -876,8 +858,6 @@ export function PlanningView({
       events,
     );
   }, [
-    currentProjection,
-    projectionToForecast,
     computeForecastYearly,
     scenarioBaseNetWorth,
     scenarioBaseLiquidity,
@@ -889,17 +869,8 @@ export function PlanningView({
     () => scenarios.find((scenario) => scenario.name === 'Base Case') ?? scenarios[0],
     [scenarios],
   );
-  const baseProjection = baseScenario ? projectionCache[baseScenario.id] : undefined;
   const baseForecastYearly = useMemo(() => {
     if (!baseScenario) return [] as ForecastPoint[];
-    if (baseProjection?.points?.length) {
-      return projectionToForecast(
-        baseProjection.points,
-        baseProjection.baseNetWorth,
-        baseProjection.baseLiquidity,
-        baseScenario.events ?? [],
-      );
-    }
     return computeForecastYearly(
       baseScenario.baseNetWorth,
       baseScenario.baseLiquidity,
@@ -907,27 +878,14 @@ export function PlanningView({
       baseScenario.taxBasis === 'net_income' ? 'net_income' : 'gross_income',
       baseScenario.events ?? [],
     );
-  }, [computeForecastYearly, baseScenario, baseProjection, projectionToForecast]);
+  }, [computeForecastYearly, baseScenario]);
   const baseForecastByYear = useMemo(
     () => new Map(baseForecastYearly.map((point) => [point.year, point])),
     [baseForecastYearly],
   );
 
   const forecast = useMemo(() => {
-    if (forecastYearly.length === 0) return [] as Array<{
-      year: number;
-      income: number;
-      outflow: number;
-      taxes: number;
-      baseDelta: number;
-      eventImpactNetWorth: number;
-      eventImpactLiquidity: number;
-      netChangeNetWorth: number;
-      netChangeLiquidity: number;
-      netWorth: number;
-      liquidity: number;
-      nonLiquid: number;
-      events: PlanEvent[];
+    if (forecastYearly.length === 0) return [] as Array<ForecastPoint & {
       bucketStart: number;
       bucketEnd: number;
       label: string;
@@ -939,8 +897,13 @@ export function PlanningView({
       const endOffset = Math.max(0, Math.min(forecastYearly.length - 1, bucket.end - scenarioStartYear));
       const point = forecastYearly[endOffset];
       const basePoint = baseForecastByYear.get(point.year);
+      // Sum event outflows across all years in the bucket for the tooltip
+      const bucketEventOutflow = forecastYearly
+        .filter((p) => p.year >= bucket.start && p.year <= bucket.end)
+        .reduce((sum, p) => sum + p.eventOutflow, 0);
       return {
         ...point,
+        eventOutflow: bucketEventOutflow,
         bucketStart: bucket.start,
         bucketEnd: bucket.end,
         label: bucket.label,
@@ -1425,7 +1388,12 @@ export function PlanningView({
                         </div>
                         <div
                           className="mt-1 text-center text-[12px] text-slate-600"
-                          title={`Total: ${fmtCurrency(p.netWorth)}  •  Non‑liquid: ${fmtCurrency(p.nonLiquid)}  •  Liquid: ${fmtCurrency(p.liquidity)}`}
+                          title={[
+                            `Total NW: ${fmtCurrency(p.netWorth)}`,
+                            `Non-liquid: ${fmtCurrency(p.nonLiquid)}`,
+                            `Liquid: ${fmtCurrency(p.liquidity)}`,
+                            p.eventOutflow > 0 ? `Asset costs: ${fmtCurrency(p.eventOutflow)} (capex + opex)` : '',
+                          ].filter(Boolean).join('  •  ')}
                         >
                           {p.label}
                         </div>
@@ -1568,7 +1536,7 @@ export function PlanningView({
               <tr>
                 <th className="px-3 py-2 text-left font-medium">Year</th>
                 <th className="px-3 py-2 text-right font-medium">Income</th>
-                <th className="px-3 py-2 text-right font-medium">Outflows</th>
+                <th className="px-3 py-2 text-right font-medium">Outflows (incl. asset costs)</th>
                 <th className="px-3 py-2 text-right font-medium">
                   Taxes ({(scenarioTaxRate * 100).toFixed(1)}%, {scenarioTaxBasis === 'gross_income' ? 'Gross' : 'Net'})
                 </th>
@@ -1588,7 +1556,9 @@ export function PlanningView({
                   <tr key={point.year} className={point.liquidity < 0 ? 'bg-rose-50/60' : undefined}>
                     <td className="px-3 py-2 font-medium text-slate-700">{point.year}</td>
                     <td className="px-3 py-2 text-right text-emerald-700">{fmtCurrency(point.income)}</td>
-                    <td className="px-3 py-2 text-right text-rose-700">{fmtCurrency(point.outflow)}</td>
+                    <td className="px-3 py-2 text-right text-rose-700" title={point.eventOutflow > 0 ? `Cashflows: ${fmtCurrency(point.outflow)}  •  Asset costs: ${fmtCurrency(point.eventOutflow)}` : undefined}>
+                      {fmtCurrency(point.outflow + point.eventOutflow)}
+                    </td>
                     <td className="px-3 py-2 text-right text-rose-700">{fmtCurrency(point.taxes)}</td>
                     <td className="px-3 py-2 text-right text-slate-700">{fmtCurrency(point.baseDelta)}</td>
                     <td className="px-3 py-2 text-right text-slate-700">{fmtCurrency(point.eventImpactNetWorth)}</td>
@@ -1772,7 +1742,7 @@ export function PlanningView({
                     <span className="mb-1 block text-slate-500">Useful Life (years)</span>
                     <input
                       value={modal.lifeYears}
-                      onChange={(e) => setModal((m) => ({ ...m, lifeYears: e.target.value }))}
+                      onChange={(e) => setModal((m) => ({ ...m, lifeYears: e.target.value, duration: e.target.value }))}
                       className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
                       placeholder="10"
                       type="number"
