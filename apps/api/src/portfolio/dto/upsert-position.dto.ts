@@ -38,4 +38,8 @@ export class UpsertPositionDto {
   @IsOptional()
   @IsBoolean()
   liquid?: boolean;
+
+  @IsOptional()
+  @IsString()
+  owner?: string;
 }

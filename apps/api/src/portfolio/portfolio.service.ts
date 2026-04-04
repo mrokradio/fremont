@@ -143,6 +143,7 @@ export class PortfolioService implements OnModuleInit {
       irr: row.irr ?? undefined,
       tags: Array.isArray(row.tags) ? (row.tags as string[]) : undefined,
       liquid: row.liquid,
+      owner: row.owner ?? undefined,
     };
   }
 
@@ -209,6 +210,7 @@ export class PortfolioService implements OnModuleInit {
         irr: input.irr,
         tags: input.tags ?? [],
         liquid: input.liquid ?? false,
+        owner: input.owner?.trim() || null,
       },
     });
 
@@ -228,6 +230,7 @@ export class PortfolioService implements OnModuleInit {
           irr: input.irr,
           tags: input.tags ?? [],
           liquid: input.liquid ?? false,
+          owner: input.owner?.trim() || null,
         },
       });
       return this.mapPosition(updated);

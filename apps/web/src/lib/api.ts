@@ -15,9 +15,13 @@ import type {
   FinancialProfile,
   FinancialWorkspaceResponse,
   HealthResponse,
+  Liability,
+  LiabilityWriteInput,
   PlanningScenario,
   PlanningScenarioWriteInput,
   Position,
+  PositionCashflow,
+  PositionCashflowWriteInput,
   PositionWriteInput,
   ProjectionResponse,
   ReportingYearFacts,
@@ -293,4 +297,26 @@ export const api = {
     request<CsvIngestResult<PositionWriteInput>>('/ingest/positions', { method: 'POST', body: input, auth: true }),
   ingestTransactions: (input: CsvIngestRequest) =>
     request<CsvIngestResult<TransactionWriteInput>>('/ingest/transactions', { method: 'POST', body: input, auth: true }),
+
+  liabilities: () => request<Liability[]>('/liabilities', { auth: true }),
+  createLiability: (input: LiabilityWriteInput) =>
+    request<Liability>('/liabilities', { method: 'POST', body: input, auth: true }),
+  updateLiability: (id: string, input: LiabilityWriteInput) =>
+    request<Liability>(`/liabilities/${id}`, { method: 'PUT', body: input, auth: true }),
+  deleteLiability: (id: string) =>
+    request<{ status: 'ok' }>(`/liabilities/${id}`, { method: 'DELETE', auth: true }),
+
+  positionCashflows: (positionId: string) =>
+    request<PositionCashflow[]>(`/portfolio/positions/${positionId}/cashflows`, { auth: true }),
+  createPositionCashflow: (positionId: string, input: PositionCashflowWriteInput) =>
+    request<PositionCashflow>(`/portfolio/positions/${positionId}/cashflows`, {
+      method: 'POST',
+      body: input,
+      auth: true,
+    }),
+  deletePositionCashflow: (positionId: string, cashflowId: string) =>
+    request<{ status: 'ok' }>(`/portfolio/positions/${positionId}/cashflows/${cashflowId}`, {
+      method: 'DELETE',
+      auth: true,
+    }),
 };

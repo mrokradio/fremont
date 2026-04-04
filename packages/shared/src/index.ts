@@ -9,6 +9,41 @@ export type Cashflow = {
   description: string;
 };
 
+// Asset class taxonomy
+// Top-level categories used to classify positions in the portfolio
+export type TopLevelAssetCategory =
+  | 'Fremont Holdings'
+  | 'Cash'
+  | 'Residential Real Estate'
+  | 'BGI'
+  | 'Other Assets';
+
+// Sub-categories within Fremont Holdings
+export type FremontSubCategory =
+  | 'Private Equity'
+  | 'Public Equity'
+  | 'Diversifying Assets'
+  | 'Fixed Income'
+  | 'Real Assets'
+  | 'Cash';
+
+export const TOP_LEVEL_ASSET_CATEGORIES: TopLevelAssetCategory[] = [
+  'Fremont Holdings',
+  'Cash',
+  'Residential Real Estate',
+  'BGI',
+  'Other Assets',
+];
+
+export const FREMONT_SUB_CATEGORIES: FremontSubCategory[] = [
+  'Private Equity',
+  'Public Equity',
+  'Diversifying Assets',
+  'Fixed Income',
+  'Real Assets',
+  'Cash',
+];
+
 export type Position = {
   id: string;
   name: string;
@@ -19,6 +54,7 @@ export type Position = {
   irr?: number; // 0..1
   tags?: string[];
   liquid?: boolean;
+  owner?: string; // legal entity / trust / individual (e.g. "Smith Family Trust")
 };
 
 export type PositionWriteInput = {
@@ -30,6 +66,62 @@ export type PositionWriteInput = {
   irr?: number;
   tags?: string[];
   liquid?: boolean;
+  owner?: string; // legal entity / trust / individual
+};
+
+// Per-position cash flow entry for inception-to-date performance tracking
+export type PositionCashflow = {
+  id: string;
+  positionId: string;
+  date: string; // YYYY-MM-DD
+  amount: number; // positive = contribution/capital call, negative = distribution/withdrawal
+  note?: string;
+  createdAt: string;
+};
+
+export type PositionCashflowWriteInput = {
+  date: string;
+  amount: number;
+  note?: string;
+};
+
+// Liability category options
+export type LiabilityCategory =
+  | 'Mortgage'
+  | 'Note Payable'
+  | 'Committed Grant'
+  | 'Line of Credit'
+  | 'Other';
+
+export const LIABILITY_CATEGORIES: LiabilityCategory[] = [
+  'Mortgage',
+  'Note Payable',
+  'Committed Grant',
+  'Line of Credit',
+  'Other',
+];
+
+export type Liability = {
+  id: string;
+  name: string;
+  category: LiabilityCategory | string;
+  balance: number; // outstanding balance (positive number), USD
+  rate?: number; // annual interest rate 0..1
+  maturityDate?: string; // YYYY-MM-DD
+  owner?: string; // legal entity / individual
+  note?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type LiabilityWriteInput = {
+  name: string;
+  category: LiabilityCategory | string;
+  balance: number;
+  rate?: number;
+  maturityDate?: string;
+  owner?: string;
+  note?: string;
 };
 
 export type AssetRecord = {

@@ -16,6 +16,7 @@ import { ProjectionModule } from './projection/projection.module';
 import { StrategyReportingModule } from './strategy-reporting/strategy-reporting.module';
 import { ReportingModule } from './reporting/reporting.module';
 import { AssetsModule } from './assets/assets.module';
+import { LiabilitiesModule } from './liabilities/liabilities.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { AssetsModule } from './assets/assets.module';
     FinancialProfileModule,
     CashflowModule,
     AssetsModule,
+    LiabilitiesModule,
     ProjectionModule,
     StrategyReportingModule,
     ReportingModule,

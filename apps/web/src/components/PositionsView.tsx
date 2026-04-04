@@ -1,12 +1,18 @@
 import { useMemo, useState } from 'react';
 import type { StrategyKind } from '@fremont/shared';
-import { STRATEGY_KINDS } from '@fremont/shared';
+import { STRATEGY_KINDS, TOP_LEVEL_ASSET_CATEGORIES, FREMONT_SUB_CATEGORIES } from '@fremont/shared';
 import type { Position } from '../types/models';
 import { formatCurrency, formatPercent } from '../utils/format';
 
+// Flat list of asset class suggestions for the dropdown/datalist
+const ASSET_CLASS_SUGGESTIONS: string[] = [
+  ...TOP_LEVEL_ASSET_CATEGORIES,
+  ...FREMONT_SUB_CATEGORIES.map((sub) => `Fremont Holdings / ${sub}`),
+];
+
 type CreatePositionInput = Pick<
   Position,
-  'name' | 'assetClass' | 'year' | 'value' | 'costBasis' | 'irr' | 'tags' | 'liquid'
+  'name' | 'assetClass' | 'year' | 'value' | 'costBasis' | 'irr' | 'tags' | 'liquid' | 'owner'
 >;
 
 type Props = {
@@ -178,6 +184,7 @@ export function PositionsView({
       irr: draft.irr != null ? Number(draft.irr) : undefined,
       tags: (draft.tags || []).map((t) => t.trim()).filter(Boolean),
       liquid: !!draft.liquid,
+      owner: draft.owner?.trim() || undefined,
     };
 
     onUpdatePosition && onUpdatePosition(normalized);
@@ -265,12 +272,13 @@ export function PositionsView({
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-slate-200">
-        <table className="min-w-[720px] bg-white">
+        <table className="min-w-[900px] bg-white">
           <thead className="bg-slate-50">
             <tr className="text-left text-sm text-slate-600">
               <th className="px-3 py-2 text-center font-medium">Actions</th>
               <th className="px-4 py-2 font-medium">Name</th>
               <th className="px-4 py-2 font-medium">Asset Class</th>
+              <th className="px-4 py-2 font-medium">Owner / Entity</th>
               <th className="px-4 py-2 text-right font-medium">Year</th>
               <th className="px-4 py-2 text-right font-medium">Value</th>
               <th className="px-4 py-2 text-right font-medium">Cost Basis</th>
@@ -326,15 +334,39 @@ export function PositionsView({
                   </td>
                   <td className="px-4 py-2 text-slate-600">
                     {editingId === p.id && !isStrategyRow ? (
+                      <>
+                        <input
+                          className="w-full rounded border border-slate-200 px-2 py-1"
+                          list="asset-class-suggestions"
+                          value={draft?.assetClass || ''}
+                          onChange={(e) =>
+                            setDraft((d) => ({ ...(d as DisplayPosition), assetClass: e.target.value }))
+                          }
+                        />
+                        <datalist id="asset-class-suggestions">
+                          {ASSET_CLASS_SUGGESTIONS.map((s) => (
+                            <option key={s} value={s} />
+                          ))}
+                        </datalist>
+                      </>
+                    ) : (
+                      p.assetClass
+                    )}
+                  </td>
+                  <td className="px-4 py-2 text-slate-600">
+                    {editingId === p.id && !isStrategyRow ? (
                       <input
                         className="w-full rounded border border-slate-200 px-2 py-1"
-                        value={draft?.assetClass || ''}
+                        placeholder="e.g. Smith Family Trust"
+                        value={draft?.owner || ''}
                         onChange={(e) =>
-                          setDraft((d) => ({ ...(d as DisplayPosition), assetClass: e.target.value }))
+                          setDraft((d) => ({ ...(d as DisplayPosition), owner: e.target.value || undefined }))
                         }
                       />
                     ) : (
-                      p.assetClass
+                      <span className={p.owner ? 'text-slate-800' : 'text-slate-400'}>
+                        {p.owner || '—'}
+                      </span>
                     )}
                   </td>
                   <td className="px-4 py-2 text-right text-slate-900">
@@ -493,7 +525,7 @@ export function PositionsView({
             })}
             {filtered.length === 0 && (
               <tr>
-                <td className="px-4 py-10 text-center text-sm text-slate-500" colSpan={10}>
+                <td className="px-4 py-10 text-center text-sm text-slate-500" colSpan={11}>
                   No positions found.
                 </td>
               </tr>
