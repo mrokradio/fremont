@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { StrategyKind } from '@fremont/shared';
-import { STRATEGY_KINDS, TOP_LEVEL_ASSET_CATEGORIES, FREMONT_SUB_CATEGORIES } from '@fremont/shared';
+import { TOP_LEVEL_ASSET_CATEGORIES, FREMONT_SUB_CATEGORIES } from '@fremont/shared';
 import type { Position } from '../types/models';
 import { formatCurrency, formatPercent } from '../utils/format';
 
@@ -26,83 +25,30 @@ type Props = {
 
 type SortKey = 'name' | 'assetClass' | 'value' | 'irr';
 
-type DisplayPosition = Position & {
-  isStrategyRow?: boolean;
-  isVirtualStrategyRow?: boolean;
-  strategyKind?: StrategyKind;
-};
-
-const STRATEGIES: StrategyKind[] = [...STRATEGY_KINDS];
-const STRATEGY_ASSET_CLASS = 'Fremont Strategy';
-const STRATEGY_TAG = 'fremont-strategy';
-
-const isStrategyKind = (value: string): value is StrategyKind =>
-  (STRATEGIES as readonly string[]).includes(value);
-
-const ensureStrategyTags = (tags: string[] | undefined): string[] =>
-  Array.from(new Set([...(tags || []), STRATEGY_TAG]));
-
 export function PositionsView({
   positions,
   onToggleLiquid,
   onUpdatePosition,
   onAddPosition,
-  onCreatePosition,
+  onCreatePosition: _onCreatePosition,
   onDeletePosition,
 }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>('value');
   const [q, setQ] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [draft, setDraft] = useState<DisplayPosition | null>(null);
+  const [draft, setDraft] = useState<Position | null>(null);
 
-  const allRows = useMemo<DisplayPosition[]>(() => {
-    const mappedPositions = positions.map<DisplayPosition>((position) => {
-      const strategyKind =
-        position.assetClass === STRATEGY_ASSET_CLASS && isStrategyKind(position.name)
-          ? position.name
-          : undefined;
-
-      return {
-        ...position,
-        isStrategyRow: !!strategyKind,
-        isVirtualStrategyRow: false,
-        strategyKind,
-      };
-    });
-
-    const existingStrategies = new Set(
-      mappedPositions
-        .filter((position): position is DisplayPosition & { strategyKind: StrategyKind } =>
-          Boolean(position.isStrategyRow && position.strategyKind),
-        )
-        .map((position) => position.strategyKind),
-    );
-
-    const virtualRows: DisplayPosition[] = STRATEGIES.filter((strategy) => !existingStrategies.has(strategy)).map(
-      (strategy) => ({
-        id: `virtual-strategy-${strategy.replace(/\s+/g, '-').toLowerCase()}`,
-        name: strategy,
-        assetClass: STRATEGY_ASSET_CLASS,
-        value: 0,
-        tags: [STRATEGY_TAG],
-        liquid: false,
-        isStrategyRow: true,
-        isVirtualStrategyRow: true,
-        strategyKind: strategy,
-      }),
-    );
-
-    return [...mappedPositions, ...virtualRows];
-  }, [positions]);
-
-  const allTags = useMemo(() => Array.from(new Set(allRows.flatMap((p) => p.tags || []))).sort(), [allRows]);
+  const allTags = useMemo(
+    () => Array.from(new Set(positions.flatMap((p) => p.tags || []))).sort(),
+    [positions],
+  );
 
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
     const byText = term
-      ? allRows.filter((p) => [p.name, p.assetClass].some((f) => f.toLowerCase().includes(term)))
-      : allRows;
+      ? positions.filter((p) => [p.name, p.assetClass].some((f) => f.toLowerCase().includes(term)))
+      : positions;
     const byTags = selectedTags.length
       ? byText.filter((p) => selectedTags.every((t) => (p.tags || []).includes(t)))
       : byText;
@@ -121,12 +67,12 @@ export function PositionsView({
       }
     });
     return sorted;
-  }, [allRows, q, selectedTags, sortKey]);
+  }, [positions, q, selectedTags, sortKey]);
 
   const toggleTag = (t: string) =>
     setSelectedTags((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
 
-  const beginEdit = (p: DisplayPosition) => {
+  const beginEdit = (p: Position) => {
     setEditingId(p.id);
     setDraft({ ...p, tags: [...(p.tags || [])] });
   };
@@ -138,41 +84,6 @@ export function PositionsView({
 
   const commitEdit = () => {
     if (!editingId || !draft) return;
-
-    if (draft.isStrategyRow) {
-      const nextValue = Number(draft.value) || 0;
-
-      if (draft.isVirtualStrategyRow) {
-        if (onCreatePosition) {
-          onCreatePosition({
-            name: draft.strategyKind ?? draft.name,
-            assetClass: STRATEGY_ASSET_CLASS,
-            year: draft.year != null ? Number(draft.year) : undefined,
-            value: nextValue,
-            tags: [STRATEGY_TAG],
-            liquid: false,
-          });
-        }
-        setEditingId(null);
-        setDraft(null);
-        return;
-      }
-
-      const normalized: Position = {
-        id: draft.id,
-        name: draft.strategyKind ?? draft.name,
-        assetClass: STRATEGY_ASSET_CLASS,
-        year: draft.year != null ? Number(draft.year) : undefined,
-        value: nextValue,
-        tags: ensureStrategyTags(draft.tags),
-        liquid: false,
-      };
-
-      onUpdatePosition && onUpdatePosition(normalized);
-      setEditingId(null);
-      setDraft(null);
-      return;
-    }
 
     const normalized: Position = {
       id: draft.id,
@@ -289,240 +200,231 @@ export function PositionsView({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {filtered.map((p) => {
-              const isStrategyRow = !!p.isStrategyRow;
-              return (
-                <tr key={p.id} className="text-sm">
-                  <td className="px-3 py-2 text-center">
-                    {editingId === p.id ? (
-                      <div className="flex justify-center gap-1">
-                        <button
-                          className="rounded p-1 text-slate-600 hover:bg-slate-100"
-                          title="Cancel"
-                          onClick={cancelEdit}
-                        >
-                          <span className="material-symbols-outlined text-base">close</span>
-                        </button>
-                        <button
-                          className="rounded bg-brand-600 p-1 text-white hover:bg-brand-700"
-                          title="Save"
-                          onClick={commitEdit}
-                        >
-                          <span className="material-symbols-outlined text-base">done</span>
-                        </button>
-                      </div>
-                    ) : (
+            {filtered.map((p) => (
+              <tr key={p.id} className="text-sm">
+                <td className="px-3 py-2 text-center">
+                  {editingId === p.id ? (
+                    <div className="flex justify-center gap-1">
                       <button
                         className="rounded p-1 text-slate-600 hover:bg-slate-100"
-                        title="Edit"
-                        onClick={() => beginEdit(p)}
+                        title="Cancel"
+                        onClick={cancelEdit}
                       >
-                        <span className="material-symbols-outlined text-base">edit</span>
+                        <span className="material-symbols-outlined text-base">close</span>
                       </button>
-                    )}
-                  </td>
-                  <td className="px-4 py-2 text-slate-800">
-                    {editingId === p.id && !isStrategyRow ? (
+                      <button
+                        className="rounded bg-brand-600 p-1 text-white hover:bg-brand-700"
+                        title="Save"
+                        onClick={commitEdit}
+                      >
+                        <span className="material-symbols-outlined text-base">done</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      className="rounded p-1 text-slate-600 hover:bg-slate-100"
+                      title="Edit"
+                      onClick={() => beginEdit(p)}
+                    >
+                      <span className="material-symbols-outlined text-base">edit</span>
+                    </button>
+                  )}
+                </td>
+                <td className="px-4 py-2 text-slate-800">
+                  {editingId === p.id ? (
+                    <input
+                      className="w-full rounded border border-slate-200 px-2 py-1"
+                      value={draft?.name || ''}
+                      onChange={(e) => setDraft((d) => d && { ...d, name: e.target.value })}
+                    />
+                  ) : (
+                    p.name
+                  )}
+                </td>
+                <td className="px-4 py-2 text-slate-600">
+                  {editingId === p.id ? (
+                    <>
                       <input
                         className="w-full rounded border border-slate-200 px-2 py-1"
-                        value={draft?.name || ''}
-                        onChange={(e) => setDraft((d) => ({ ...(d as DisplayPosition), name: e.target.value }))}
+                        list="asset-class-suggestions"
+                        value={draft?.assetClass || ''}
+                        onChange={(e) => setDraft((d) => d && { ...d, assetClass: e.target.value })}
                       />
-                    ) : (
-                      p.name
-                    )}
-                  </td>
-                  <td className="px-4 py-2 text-slate-600">
-                    {editingId === p.id && !isStrategyRow ? (
-                      <>
-                        <input
-                          className="w-full rounded border border-slate-200 px-2 py-1"
-                          list="asset-class-suggestions"
-                          value={draft?.assetClass || ''}
-                          onChange={(e) =>
-                            setDraft((d) => ({ ...(d as DisplayPosition), assetClass: e.target.value }))
-                          }
-                        />
-                        <datalist id="asset-class-suggestions">
-                          {ASSET_CLASS_SUGGESTIONS.map((s) => (
-                            <option key={s} value={s} />
-                          ))}
-                        </datalist>
-                      </>
-                    ) : (
-                      p.assetClass
-                    )}
-                  </td>
-                  <td className="px-4 py-2 text-slate-600">
-                    {editingId === p.id && !isStrategyRow ? (
-                      <input
-                        className="w-full rounded border border-slate-200 px-2 py-1"
-                        placeholder="e.g. Smith Family Trust"
-                        value={draft?.owner || ''}
-                        onChange={(e) =>
-                          setDraft((d) => ({ ...(d as DisplayPosition), owner: e.target.value || undefined }))
-                        }
-                      />
-                    ) : (
-                      <span className={p.owner ? 'text-slate-800' : 'text-slate-400'}>
-                        {p.owner || '—'}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2 text-right text-slate-900">
-                    {editingId === p.id ? (
-                      <input
-                        className="w-full rounded border border-slate-200 px-2 py-1 text-right"
-                        value={draft?.year ?? ''}
-                        type="number"
-                        min={1900}
-                        max={3000}
-                        step={1}
-                        onChange={(e) =>
-                          setDraft((d) => ({
-                            ...(d as DisplayPosition),
+                      <datalist id="asset-class-suggestions">
+                        {ASSET_CLASS_SUGGESTIONS.map((s) => (
+                          <option key={s} value={s} />
+                        ))}
+                      </datalist>
+                    </>
+                  ) : (
+                    p.assetClass
+                  )}
+                </td>
+                <td className="px-4 py-2 text-slate-600">
+                  {editingId === p.id ? (
+                    <input
+                      className="w-full rounded border border-slate-200 px-2 py-1"
+                      placeholder="e.g. Smith Family Trust"
+                      value={draft?.owner || ''}
+                      onChange={(e) =>
+                        setDraft((d) => d && { ...d, owner: e.target.value || undefined })
+                      }
+                    />
+                  ) : (
+                    <span className={p.owner ? 'text-slate-800' : 'text-slate-400'}>
+                      {p.owner || '—'}
+                    </span>
+                  )}
+                </td>
+                <td className="px-4 py-2 text-right text-slate-900">
+                  {editingId === p.id ? (
+                    <input
+                      className="w-full rounded border border-slate-200 px-2 py-1 text-right"
+                      value={draft?.year ?? ''}
+                      type="number"
+                      min={1900}
+                      max={3000}
+                      step={1}
+                      onChange={(e) =>
+                        setDraft((d) =>
+                          d && {
+                            ...d,
                             year: e.target.value === '' ? undefined : Number(e.target.value),
-                          }))
-                        }
-                      />
-                    ) : p.year != null ? (
-                      p.year
-                    ) : (
-                      '—'
-                    )}
-                  </td>
-                  <td className="px-4 py-2 text-right text-slate-900">
-                    {editingId === p.id ? (
-                      <input
-                        className="w-full rounded border border-slate-200 px-2 py-1 text-right"
-                        value={draft?.value ?? 0}
-                        type="number"
-                        onChange={(e) =>
-                          setDraft((d) => ({ ...(d as DisplayPosition), value: Number(e.target.value) }))
-                        }
-                      />
-                    ) : (
-                      formatCurrency(p.value)
-                    )}
-                  </td>
-                  <td className="px-4 py-2 text-right text-slate-700">
-                    {isStrategyRow ? (
-                      '—'
-                    ) : editingId === p.id ? (
-                      <input
-                        className="w-full rounded border border-slate-200 px-2 py-1 text-right"
-                        value={draft?.costBasis ?? ''}
-                        type="number"
-                        onChange={(e) =>
-                          setDraft((d) => ({
-                            ...(d as DisplayPosition),
+                          },
+                        )
+                      }
+                    />
+                  ) : p.year != null ? (
+                    p.year
+                  ) : (
+                    '—'
+                  )}
+                </td>
+                <td className="px-4 py-2 text-right text-slate-900">
+                  {editingId === p.id ? (
+                    <input
+                      className="w-full rounded border border-slate-200 px-2 py-1 text-right"
+                      value={draft?.value ?? 0}
+                      type="number"
+                      onChange={(e) =>
+                        setDraft((d) => d && { ...d, value: Number(e.target.value) })
+                      }
+                    />
+                  ) : (
+                    formatCurrency(p.value)
+                  )}
+                </td>
+                <td className="px-4 py-2 text-right text-slate-700">
+                  {editingId === p.id ? (
+                    <input
+                      className="w-full rounded border border-slate-200 px-2 py-1 text-right"
+                      value={draft?.costBasis ?? ''}
+                      type="number"
+                      onChange={(e) =>
+                        setDraft((d) =>
+                          d && {
+                            ...d,
                             costBasis: e.target.value === '' ? undefined : Number(e.target.value),
-                          }))
-                        }
-                      />
-                    ) : p.costBasis != null ? (
-                      formatCurrency(p.costBasis)
-                    ) : (
-                      '—'
-                    )}
-                  </td>
-                  <td className="px-4 py-2 text-right text-slate-700">
-                    {isStrategyRow ? (
-                      '—'
-                    ) : editingId === p.id ? (
-                      <input
-                        className="w-full rounded border border-slate-200 px-2 py-1 text-right"
-                        value={draft?.irr != null ? (Number(draft.irr) * 100).toString() : ''}
-                        type="number"
-                        step="0.1"
-                        onChange={(e) =>
-                          setDraft((d) => ({
-                            ...(d as DisplayPosition),
+                          },
+                        )
+                      }
+                    />
+                  ) : p.costBasis != null ? (
+                    formatCurrency(p.costBasis)
+                  ) : (
+                    '—'
+                  )}
+                </td>
+                <td className="px-4 py-2 text-right text-slate-700">
+                  {editingId === p.id ? (
+                    <input
+                      className="w-full rounded border border-slate-200 px-2 py-1 text-right"
+                      value={draft?.irr != null ? (Number(draft.irr) * 100).toString() : ''}
+                      type="number"
+                      step="0.1"
+                      onChange={(e) =>
+                        setDraft((d) =>
+                          d && {
+                            ...d,
                             irr: e.target.value === '' ? undefined : Number(e.target.value) / 100,
-                          }))
-                        }
-                      />
-                    ) : (
-                      formatPercent(p.irr)
-                    )}
-                  </td>
-                  <td className="px-4 py-2 text-center">
-                    {isStrategyRow ? (
-                      <span className="text-slate-400">—</span>
-                    ) : editingId === p.id ? (
-                      <input
-                        type="checkbox"
-                        checked={!!draft?.liquid}
-                        onChange={(e) =>
-                          setDraft((d) => ({ ...(d as DisplayPosition), liquid: e.target.checked }))
-                        }
-                      />
-                    ) : (
-                      <input
-                        type="checkbox"
-                        checked={!!p.liquid}
-                        onChange={(e) => onToggleLiquid && onToggleLiquid(p.id, e.target.checked)}
-                        aria-label={`Mark ${p.name} as ${p.liquid ? 'illiquid' : 'liquid'}`}
-                      />
-                    )}
-                  </td>
-                  <td className="px-4 py-2">
-                    {isStrategyRow ? (
-                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700">
-                        #fremont-strategy
-                      </span>
-                    ) : editingId === p.id ? (
-                      <input
-                        className="w-full rounded border border-slate-200 px-2 py-1"
-                        value={(draft?.tags || []).join(', ')}
-                        onChange={(e) =>
-                          setDraft((d) => ({
-                            ...(d as DisplayPosition),
+                          },
+                        )
+                      }
+                    />
+                  ) : (
+                    formatPercent(p.irr)
+                  )}
+                </td>
+                <td className="px-4 py-2 text-center">
+                  {editingId === p.id ? (
+                    <input
+                      type="checkbox"
+                      checked={!!draft?.liquid}
+                      onChange={(e) => setDraft((d) => d && { ...d, liquid: e.target.checked })}
+                    />
+                  ) : (
+                    <input
+                      type="checkbox"
+                      checked={!!p.liquid}
+                      onChange={(e) => onToggleLiquid && onToggleLiquid(p.id, e.target.checked)}
+                      aria-label={`Mark ${p.name} as ${p.liquid ? 'illiquid' : 'liquid'}`}
+                    />
+                  )}
+                </td>
+                <td className="px-4 py-2">
+                  {editingId === p.id ? (
+                    <input
+                      className="w-full rounded border border-slate-200 px-2 py-1"
+                      value={(draft?.tags || []).join(', ')}
+                      onChange={(e) =>
+                        setDraft((d) =>
+                          d && {
+                            ...d,
                             tags: e.target.value
                               .split(',')
                               .map((s) => s.trim())
                               .filter(Boolean),
-                          }))
-                        }
-                        placeholder="tag1, tag2"
-                      />
-                    ) : (
-                      <div className="flex flex-wrap gap-1">
-                        {(p.tags || []).map((t) => {
-                          const active = selectedTags.includes(t);
-                          return (
-                            <button
-                              key={t}
-                              onClick={() => toggleTag(t)}
-                              className={
-                                'rounded-full px-2 py-0.5 text-xs ' +
-                                (active
-                                  ? 'bg-brand-50 text-brand-700 ring-1 ring-brand-300 hover:bg-brand-100'
-                                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200')
-                              }
-                              title={`${active ? 'Remove' : 'Filter by'} #${t}`}
-                            >
-                              #{t}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-4 py-2 text-right">
-                    {!p.isVirtualStrategyRow && editingId !== p.id && (
-                      <button
-                        className="rounded p-1 text-slate-600 hover:bg-rose-50 hover:text-rose-700"
-                        title="Delete"
-                        onClick={() => onDeletePosition && onDeletePosition(p.id)}
-                      >
-                        <span className="material-symbols-outlined text-base">delete</span>
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
+                          },
+                        )
+                      }
+                      placeholder="tag1, tag2"
+                    />
+                  ) : (
+                    <div className="flex flex-wrap gap-1">
+                      {(p.tags || []).map((t) => {
+                        const active = selectedTags.includes(t);
+                        return (
+                          <button
+                            key={t}
+                            onClick={() => toggleTag(t)}
+                            className={
+                              'rounded-full px-2 py-0.5 text-xs ' +
+                              (active
+                                ? 'bg-brand-50 text-brand-700 ring-1 ring-brand-300 hover:bg-brand-100'
+                                : 'bg-slate-100 text-slate-700 hover:bg-slate-200')
+                            }
+                            title={`${active ? 'Remove' : 'Filter by'} #${t}`}
+                          >
+                            #{t}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </td>
+                <td className="px-4 py-2 text-right">
+                  {editingId !== p.id && (
+                    <button
+                      className="rounded p-1 text-slate-600 hover:bg-rose-50 hover:text-rose-700"
+                      title="Delete"
+                      onClick={() => onDeletePosition && onDeletePosition(p.id)}
+                    >
+                      <span className="material-symbols-outlined text-base">delete</span>
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
             {filtered.length === 0 && (
               <tr>
                 <td className="px-4 py-10 text-center text-sm text-slate-500" colSpan={11}>
