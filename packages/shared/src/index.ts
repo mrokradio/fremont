@@ -1,3 +1,5 @@
+import type { StrategyKind } from './strategy-reporting';
+
 export type AllocationSlice = {
   assetClass: string;
   percent: number; // 0..1
@@ -48,6 +50,7 @@ export type Position = {
   id: string;
   name: string;
   assetClass: string;
+  strategy?: StrategyKind; // which investment strategy owns this position
   year?: number; // YYYY
   value: number; // USD
   costBasis?: number; // USD
@@ -60,6 +63,7 @@ export type Position = {
 export type PositionWriteInput = {
   name: string;
   assetClass: string;
+  strategy?: StrategyKind;
   year?: number;
   value: number;
   costBasis?: number;

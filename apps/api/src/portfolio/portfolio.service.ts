@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import {
   Prisma,
+  StrategyKind as PrismaStrategyKind,
   TransactionCategory as PrismaTransactionCategory,
   type Position as PrismaPosition,
   type Transaction as PrismaTransaction,
@@ -10,6 +11,7 @@ import type {
   PortfolioSnapshot,
   Position,
   PositionWriteInput,
+  StrategyKind,
   Transaction,
   TransactionCategory,
   TransactionWriteInput,
@@ -38,6 +40,20 @@ const CATEGORY_FROM_DB: Record<PrismaTransactionCategory, TransactionCategory> =
   Other: 'Other',
 };
 
+const STRATEGY_TO_DB: Record<StrategyKind, PrismaStrategyKind> = {
+  'Liquidity Program': 'Liquidity_Program',
+  OpCos: 'OpCos',
+  'BF Global': 'BF_Global',
+  'Opportunities Fund': 'Opportunities_Fund',
+};
+
+const STRATEGY_FROM_DB: Record<PrismaStrategyKind, StrategyKind> = {
+  Liquidity_Program: 'Liquidity Program',
+  OpCos: 'OpCos',
+  BF_Global: 'BF Global',
+  Opportunities_Fund: 'Opportunities Fund',
+};
+
 const fallbackSnapshot: PortfolioSnapshot = {
   asOf: new Date().toISOString().slice(0, 10),
   netWorth: 0,
@@ -55,6 +71,7 @@ export class PortfolioService {
       id: row.id,
       name: row.name,
       assetClass: row.assetClass,
+      strategy: row.strategy ? STRATEGY_FROM_DB[row.strategy] : undefined,
       year: row.year ?? undefined,
       value: row.value,
       costBasis: row.costBasis ?? undefined,
@@ -121,6 +138,7 @@ export class PortfolioService {
       data: {
         name: input.name,
         assetClass: input.assetClass,
+        strategy: input.strategy ? STRATEGY_TO_DB[input.strategy] : null,
         year: input.year,
         value: input.value,
         costBasis: input.costBasis,
@@ -141,6 +159,7 @@ export class PortfolioService {
         data: {
           name: input.name,
           assetClass: input.assetClass,
+          strategy: input.strategy ? STRATEGY_TO_DB[input.strategy] : null,
           year: input.year,
           value: input.value,
           costBasis: input.costBasis,

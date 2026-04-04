@@ -94,6 +94,7 @@ model Position {
   id         String             @id @default(cuid())
   name       String
   assetClass String
+  strategy   StrategyKind?      // which investment strategy owns this position
   year       Int?
   value      Float
   costBasis  Float?
@@ -104,6 +105,8 @@ model Position {
   createdAt  DateTime           @default(now())
   updatedAt  DateTime           @updatedAt
   cashflows  PositionCashflow[]
+
+  @@index([strategy])
 }
 
 model PositionCashflow {
