@@ -6,7 +6,6 @@ import type {
   PlanningScenario,
   PlanningScenarioWriteInput,
   Position,
-  StrategyBenchmark,
 } from '@fremont/shared';
 import { LOCAL_STORAGE_KEYS } from '@fremont/shared';
 import type { PlanEvent, PlanningAsset, PlanningAssetKind } from '../types/models';
@@ -97,7 +96,6 @@ export function PlanningView({
   positions = [],
 }: Props) {
   const [zoomStep, setZoomStep] = useState<ZoomStep>(1);
-  const [strategyBenchmarks, setStrategyBenchmarks] = useState<StrategyBenchmark[]>([]);
   const [dragMode, setDragMode] = useState<'asset' | 'event' | null>(null);
   type CashItem = { id: string; name: string; amount: number; start: number; end: number };
   type ModalState = {
@@ -210,6 +208,7 @@ export function PlanningView({
     baseLiquidity: number;
     taxRate?: number; // 0..1
     taxBasis?: TaxBasis;
+    returnRate?: number; // 0..1 annual portfolio return (used when strategy benchmarks are unavailable)
     events: PlanEvent[];
   };
 
@@ -226,6 +225,7 @@ export function PlanningView({
         ...scenario,
         taxRate: Math.max(0, Math.min(1, typeof scenario.taxRate === 'number' ? scenario.taxRate : 0)),
         taxBasis: scenario.taxBasis === 'net_income' ? 'net_income' : 'gross_income',
+        returnRate: typeof scenario.returnRate === 'number' ? Math.max(0, Math.min(1, scenario.returnRate)) : 0,
       }));
     } catch {
       return [];
@@ -240,7 +240,9 @@ export function PlanningView({
     const taxRateRaw = Number(inputs?.taxRate ?? 0);
     const taxRate = Number.isFinite(taxRateRaw) ? Math.max(0, Math.min(1, taxRateRaw)) : 0;
     const taxBasis: TaxBasis = inputs?.taxBasis === 'net_income' ? 'net_income' : 'gross_income';
-    return { taxRate, taxBasis };
+    const returnRateRaw = Number(inputs?.returnRate ?? 0);
+    const returnRate = Number.isFinite(returnRateRaw) ? Math.max(0, Math.min(1, returnRateRaw)) : 0;
+    return { taxRate, taxBasis, returnRate };
   };
 
   const toScenarioWriteInput = (scenario: PlanScenario): PlanningScenarioWriteInput => ({
@@ -252,6 +254,7 @@ export function PlanningView({
     inputs: {
       taxRate: Math.max(0, Math.min(1, scenario.taxRate ?? 0)),
       taxBasis: scenario.taxBasis === 'net_income' ? 'net_income' : 'gross_income',
+      returnRate: Math.max(0, Math.min(1, scenario.returnRate ?? 0)),
     },
     events: (scenario.events || []) as unknown as Record<string, unknown>[],
   });
@@ -267,6 +270,7 @@ export function PlanningView({
       baseLiquidity: scenario.baseLiquidity,
       taxRate: parsed.taxRate,
       taxBasis: parsed.taxBasis,
+      returnRate: parsed.returnRate,
       events: Array.isArray(scenario.events) ? (scenario.events as unknown as PlanEvent[]) : [],
     };
   };
@@ -283,6 +287,7 @@ export function PlanningView({
       baseLiquidity,
       taxRate: 0,
       taxBasis: 'gross_income',
+      returnRate: 0,
       events: [],
     };
     persistScenarios([base]);
@@ -298,9 +303,11 @@ export function PlanningView({
   const scenarioBaseLiquidity = currentScenario?.baseLiquidity ?? baseLiquidity;
   const scenarioTaxRate = Math.max(0, Math.min(1, currentScenario?.taxRate ?? 0));
   const scenarioTaxBasis: TaxBasis = currentScenario?.taxBasis === 'net_income' ? 'net_income' : 'gross_income';
+  const scenarioReturnRate = Math.max(0, Math.min(1, currentScenario?.returnRate ?? 0));
   const events = currentScenario?.events ?? [];
   const canonicalFacts = workspace?.year === selectedYear ? workspace.facts : null;
   const [taxRateText, setTaxRateText] = useState<string>('0.0');
+  const [returnRateText, setReturnRateText] = useState<string>('0.0');
 
   const replaceScenarioId = useCallback((previousId: string, nextScenario: PlanScenario) => {
     setScenarios((prev) => {
@@ -324,13 +331,14 @@ export function PlanningView({
     } catch {}
   }, [remoteSyncEnabled, replaceScenarioId]);
 
-  useEffect(() => {
-    api.strategyBenchmarks().then(setStrategyBenchmarks).catch(() => {});
-  }, []);
 
   useEffect(() => {
     setTaxRateText((scenarioTaxRate * 100).toFixed(1));
   }, [scenarioTaxRate, currentId]);
+
+  useEffect(() => {
+    setReturnRateText((scenarioReturnRate * 100).toFixed(1));
+  }, [scenarioReturnRate, currentId]);
 
   useEffect(() => {
     let active = true;
@@ -388,6 +396,7 @@ export function PlanningView({
             baseLiquidity: baseNetWorth > 0 ? baseNetWorth : profile.baseLiquidity,
             taxRate: Math.max(0, Math.min(1, Number(profile.assumptions?.taxRate ?? 0))),
             taxBasis: profile.assumptions?.taxBasis === 'net_income' ? 'net_income' : 'gross_income',
+            returnRate: Math.max(0, Math.min(1, Number(profile.assumptions?.returnRate ?? 0))),
           };
           persistScenarios(next);
           return next;
@@ -419,12 +428,14 @@ export function PlanningView({
 
       const normalizedTaxRate = Math.max(0, Math.min(1, Number(profile.assumptions?.taxRate ?? 0)));
       const normalizedTaxBasis = profile.assumptions?.taxBasis === 'net_income' ? 'net_income' : 'gross_income';
+      const normalizedReturnRate = Math.max(0, Math.min(1, Number(profile.assumptions?.returnRate ?? 0)));
 
       const unchanged =
         current.baseNetWorth === seedNetWorth &&
         current.baseLiquidity === seedLiquidity &&
         (current.taxRate ?? 0) === normalizedTaxRate &&
-        (current.taxBasis ?? 'gross_income') === normalizedTaxBasis;
+        (current.taxBasis ?? 'gross_income') === normalizedTaxBasis &&
+        (current.returnRate ?? 0) === normalizedReturnRate;
 
       if (unchanged) return prev;
 
@@ -434,6 +445,7 @@ export function PlanningView({
         baseLiquidity: seedLiquidity,
         taxRate: normalizedTaxRate,
         taxBasis: normalizedTaxBasis,
+        returnRate: normalizedReturnRate,
       };
       persistScenarios(next);
       return next;
@@ -479,10 +491,11 @@ export function PlanningView({
         assumptions: {
           taxRate: Math.max(0, Math.min(1, currentScenario.taxRate ?? 0)),
           taxBasis: currentScenario.taxBasis === 'net_income' ? 'net_income' : 'gross_income',
+          returnRate: Math.max(0, Math.min(1, currentScenario.returnRate ?? 0)),
         },
       })
       .catch(() => {});
-  }, [remoteSyncEnabled, currentScenario?.id, currentScenario?.baseNetWorth, currentScenario?.baseLiquidity, currentScenario?.taxRate, currentScenario?.taxBasis]);
+  }, [remoteSyncEnabled, currentScenario?.id, currentScenario?.baseNetWorth, currentScenario?.baseLiquidity, currentScenario?.taxRate, currentScenario?.taxBasis, currentScenario?.returnRate]);
 
   const setEvents = useCallback((updater: SetStateAction<PlanEvent[]>) => {
     setScenarios((prev) => {
@@ -535,6 +548,7 @@ export function PlanningView({
       baseLiquidity: scenarioBaseLiquidity,
       taxRate: scenarioTaxRate,
       taxBasis: scenarioTaxBasis,
+      returnRate: scenarioReturnRate,
       events: [],
     };
     const arr = [...scenarios, s];
@@ -559,6 +573,7 @@ export function PlanningView({
       baseLiquidity: scenarioBaseLiquidity,
       taxRate: scenarioTaxRate,
       taxBasis: scenarioTaxBasis,
+      returnRate: scenarioReturnRate,
       events,
     };
     const arr = [...scenarios, s];
@@ -600,6 +615,7 @@ export function PlanningView({
         baseLiquidity: scenarioBaseLiquidity,
         taxRate: 0,
         taxBasis: 'gross_income',
+        returnRate: 0,
         events: [],
       };
       persistScenarios([base]);
@@ -706,43 +722,16 @@ export function PlanningView({
   };
 
   // Per-year compounded dollar growth from strategy positions using benchmark return rates.
-  // For years with actual data, uses actualReturnRate; beyond that, falls back to the
-  // strategy's most recent targetReturnRate.
-  const strategyGrowthByYear = useMemo<Map<number, number>>(() => {
-    const stratPositions = positions.filter((p) => p.tags?.includes('fremont-strategy') && (p.value ?? 0) > 0);
-    if (stratPositions.length === 0 || strategyBenchmarks.length === 0) return new Map();
-
-    // Latest known target rate per strategy for years beyond the benchmark data
-    const latestTarget = new Map<string, { rate: number; year: number }>();
-    for (const b of strategyBenchmarks) {
-      const prev = latestTarget.get(b.strategy);
-      if (prev === undefined || b.year >= prev.year) {
-        latestTarget.set(b.strategy, { rate: b.targetReturnRate, year: b.year });
-      }
-    }
-
-    const bmMap = new Map(strategyBenchmarks.map((b) => [`${b.strategy}|${b.year}`, b]));
-
-    // Track each strategy's accumulated value through the forecast years (compounding)
-    const accumulated = new Map(stratPositions.map((p) => [p.name, p.value ?? 0]));
-
-    const result = new Map<number, number>();
-    for (const year of years) {
-      let totalGrowth = 0;
-      for (const pos of stratPositions) {
-        const bm = bmMap.get(`${pos.name}|${year}`);
-        const rate = bm
-          ? year <= selectedYear ? bm.actualReturnRate : bm.targetReturnRate
-          : (latestTarget.get(pos.name)?.rate ?? 0);
-        const current = accumulated.get(pos.name) ?? 0;
-        const growth = current * rate;
-        accumulated.set(pos.name, current + growth);
-        totalGrowth += growth;
-      }
-      result.set(year, totalGrowth);
-    }
-    return result;
-  }, [positions, strategyBenchmarks, years, selectedYear]);
+  // Aggregate position values for use in the simple-return-rate forecast path.
+  // These are stable memos so they don't cause unnecessary recomputation.
+  const totalPositionsValue = useMemo(
+    () => positions.reduce((sum, p) => sum + (Number(p.value) || 0), 0),
+    [positions],
+  );
+  const liquidPositionsValue = useMemo(
+    () => positions.filter((p) => p.liquid).reduce((sum, p) => sum + (Number(p.value) || 0), 0),
+    [positions],
+  );
 
   const computeForecastYearly = useCallback((
     seedNetWorth: number,
@@ -750,13 +739,27 @@ export function PlanningView({
     taxRateAssumption: number,
     taxBasisAssumption: TaxBasis,
     plannedEvents: PlanEvent[],
+    returnRateAssumption: number = 0,
+    seedPositionsTotal: number = 0,
+    seedPositionsLiquid: number = 0,
   ) => {
     const points: ForecastPoint[] = [];
     let netWorth = seedNetWorth;
     let liquidity = seedLiquidity;
 
+    // Track the investable position pool separately so the return rate compounds
+    // on actual positions rather than the whole net worth (which includes physical assets).
+    let posPool = seedPositionsTotal;
+    // Liquid fraction of positions — used to split growth between NW and liquidity.
+    const liquidFraction = seedPositionsTotal > 0
+      ? Math.min(1, seedPositionsLiquid / seedPositionsTotal)
+      : 1;
+
     for (const year of years) {
-      const portfolioReturn = strategyGrowthByYear.get(year) ?? 0;
+      const rate = Math.max(0, returnRateAssumption);
+      const portfolioReturn = posPool * rate;
+      const nonLiquidPositionGrowth = portfolioReturn * (1 - liquidFraction);
+      posPool += portfolioReturn;
       const income = incomeItems.reduce((sum, item) => (year >= item.start && year <= item.end ? sum + item.amount : sum), 0);
       const outflow = outflowItems.reduce((sum, item) => (year >= item.start && year <= item.end ? sum + item.amount : sum), 0);
       const taxRate = Math.max(0, Math.min(1, taxRateAssumption));
@@ -821,7 +824,7 @@ export function PlanningView({
       }
 
       const netChangeNetWorth = baseDelta + eventImpactNetWorth;
-      const netChangeLiquidity = baseDelta + eventImpactLiquidity;
+      const netChangeLiquidity = baseDelta - nonLiquidPositionGrowth + eventImpactLiquidity;
 
       netWorth += netChangeNetWorth;
       liquidity += netChangeLiquidity;
@@ -847,7 +850,7 @@ export function PlanningView({
     }
 
     return points;
-  }, [years, incomeItems, outflowItems, strategyGrowthByYear]);
+  }, [years, incomeItems, outflowItems]);
 
   const forecastYearly = useMemo(() => {
     return computeForecastYearly(
@@ -856,6 +859,9 @@ export function PlanningView({
       scenarioTaxRate,
       scenarioTaxBasis,
       events,
+      scenarioReturnRate,
+      totalPositionsValue,
+      liquidPositionsValue,
     );
   }, [
     computeForecastYearly,
@@ -864,6 +870,9 @@ export function PlanningView({
     scenarioTaxRate,
     scenarioTaxBasis,
     events,
+    scenarioReturnRate,
+    totalPositionsValue,
+    liquidPositionsValue,
   ]);
   const baseScenario = useMemo(
     () => scenarios.find((scenario) => scenario.name === 'Base Case') ?? scenarios[0],
@@ -877,6 +886,9 @@ export function PlanningView({
       baseScenario.taxRate ?? 0,
       baseScenario.taxBasis === 'net_income' ? 'net_income' : 'gross_income',
       baseScenario.events ?? [],
+      baseScenario.returnRate ?? 0,
+      totalPositionsValue,
+      liquidPositionsValue,
     );
   }, [computeForecastYearly, baseScenario]);
   const baseForecastByYear = useMemo(
@@ -1023,6 +1035,9 @@ export function PlanningView({
       scenarioTaxRate,
       scenarioTaxBasis,
       eventsWithoutEdited,
+      scenarioReturnRate,
+      totalPositionsValue,
+      liquidPositionsValue,
     );
     const candidateForecast = computeForecastYearly(
       scenarioBaseNetWorth,
@@ -1030,6 +1045,9 @@ export function PlanningView({
       scenarioTaxRate,
       scenarioTaxBasis,
       candidateEvents,
+      scenarioReturnRate,
+      totalPositionsValue,
+      liquidPositionsValue,
     );
 
     const yearOffset = Math.max(0, Math.min(years.length - 1, year - scenarioStartYear));
@@ -1104,6 +1122,9 @@ export function PlanningView({
     scenarioBaseLiquidity,
     scenarioTaxRate,
     scenarioTaxBasis,
+    scenarioReturnRate,
+    totalPositionsValue,
+    liquidPositionsValue,
     computeForecastYearly,
   ]);
 
@@ -1198,8 +1219,28 @@ export function PlanningView({
             )}
           </div>
         )}
+        <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+            <div className="text-xs uppercase tracking-wide text-slate-500">Current Net Worth</div>
+            <div className="mt-1 text-base font-semibold text-slate-800">{fmtCurrency(scenarioBaseNetWorth)}</div>
+          </div>
+          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+            <div className="text-xs uppercase tracking-wide text-slate-500">Current Liquidity</div>
+            <div className="mt-1 text-base font-semibold text-slate-800">{fmtCurrency(scenarioBaseLiquidity)}</div>
+          </div>
+          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+            <div className="text-xs uppercase tracking-wide text-slate-500">Projected Net Worth</div>
+            <div className="mt-1 text-base font-semibold text-slate-800">{fmtCurrency(endingPoint?.netWorth ?? scenarioBaseNetWorth)}</div>
+            <div className="text-xs text-slate-500">{scenarioStartYear + scenarioHorizonYears - 1}</div>
+          </div>
+          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+            <div className="text-xs uppercase tracking-wide text-slate-500">Projected Liquidity</div>
+            <div className={`mt-1 text-base font-semibold ${(endingPoint?.liquidity ?? 0) < 0 ? 'text-rose-700' : 'text-slate-800'}`}>{fmtCurrency(endingPoint?.liquidity ?? scenarioBaseLiquidity)}</div>
+            <div className="text-xs text-slate-500">{scenarioStartYear + scenarioHorizonYears - 1}</div>
+          </div>
+        </div>
         <div className="space-y-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
-          <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-2 lg:grid-cols-4">
             <div className="rounded-md border border-slate-200 bg-white px-2 py-2 text-slate-700">
               <div className="flex items-center justify-between">
                 <span className="block text-xs uppercase tracking-wide text-slate-500">Tax Rate</span>
@@ -1251,6 +1292,38 @@ export function PlanningView({
                 </button>
               </div>
             </div>
+            <div className="rounded-md border border-slate-200 bg-white px-2 py-2 text-slate-700">
+              <div className="flex items-center justify-between">
+                <span className="block text-xs uppercase tracking-wide text-slate-500">Return Rate</span>
+                <span className="text-slate-400">%</span>
+              </div>
+              <input
+                type="number"
+                step="0.1"
+                min={0}
+                max={100}
+                className="mt-1 w-full rounded border border-slate-200 px-2 py-1 text-right"
+                value={returnRateText}
+                onChange={(e) => setReturnRateText(e.target.value)}
+                onBlur={() => {
+                  const next = Number(returnRateText);
+                  if (!Number.isFinite(next)) {
+                    setReturnRateText((scenarioReturnRate * 100).toFixed(1));
+                    return;
+                  }
+                  const normalized = Math.max(0, Math.min(100, next)) / 100;
+                  updateCurrentScenario((scenario) => ({ ...scenario, returnRate: normalized }));
+                  setReturnRateText((normalized * 100).toFixed(1));
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur();
+                  if (e.key === 'Escape') setReturnRateText((scenarioReturnRate * 100).toFixed(1));
+                }}
+              />
+              <div className="mt-1 text-xs text-slate-400">
+                {totalPositionsValue > 0 ? `On ${fmtCompactCurrency(totalPositionsValue)} positions` : 'No positions entered'}
+              </div>
+            </div>
             <label className="rounded-md border border-slate-200 bg-white px-2 py-2 text-slate-700">
               <span className="block text-xs uppercase tracking-wide text-slate-500">Start Year</span>
               <input
@@ -1281,9 +1354,6 @@ export function PlanningView({
           </div>
           <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
             <span className="rounded-full bg-white px-2 py-1 ring-1 ring-slate-200">
-              Ending NW: <strong className="text-slate-800">{fmtCurrency(endingPoint?.netWorth ?? scenarioBaseNetWorth)}</strong>
-            </span>
-            <span className="rounded-full bg-white px-2 py-1 ring-1 ring-slate-200">
               Min Liquidity: <strong className={minLiquidity < 0 ? 'text-rose-700' : 'text-slate-800'}>{fmtCurrency(minLiquidity)}</strong>
             </span>
             <span className="rounded-full bg-white px-2 py-1 ring-1 ring-slate-200">
@@ -1297,7 +1367,7 @@ export function PlanningView({
           </div>
         </div>
         <div className="mt-3 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">
-          Start Net Worth and Start Liquidity are derived from Positions + Assets. Forecast uses Income Items, Outflows, Tax Rate ({scenarioTaxBasis === 'gross_income' ? 'Gross Income default' : 'Net Income'}), and assets dropped into timeline year wells.
+          Start Net Worth and Liquidity are derived from your Positions + Assets. The Return Rate compounds annually on your position values ({fmtCompactCurrency(totalPositionsValue)} total, {fmtCompactCurrency(liquidPositionsValue)} liquid) — liquid position growth increases both net worth and liquidity; non-liquid position growth increases net worth only. Strategy Benchmarks take precedence when configured.
         </div>
       </div>
 

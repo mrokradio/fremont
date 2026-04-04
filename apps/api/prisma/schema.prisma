@@ -91,17 +91,50 @@ model Cashflow {
 }
 
 model Position {
-  id         String   @id @default(cuid())
+  id         String             @id @default(cuid())
   name       String
   assetClass String
+  strategy   StrategyKind?      // which investment strategy owns this position
   year       Int?
   value      Float
   costBasis  Float?
   irr        Float?
   tags       Json?
-  liquid     Boolean  @default(false)
+  liquid     Boolean            @default(false)
+  owner      String?            // legal entity / trust / individual
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+  cashflows  PositionCashflow[]
+
+  @@index([strategy])
+}
+
+model PositionCashflow {
+  id         String   @id @default(cuid())
+  positionId String
+  date       DateTime
+  amount     Float    // positive = contribution, negative = distribution/withdrawal
+  note       String?
   createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  position   Position @relation(fields: [positionId], references: [id], onDelete: Cascade)
+
+  @@index([positionId])
+  @@index([date])
+}
+
+model Liability {
+  id           String    @id @default(cuid())
+  name         String
+  category     String    // 'Mortgage' | 'Note Payable' | 'Committed Grant' | 'Line of Credit' | 'Other'
+  balance      Float     // outstanding balance (positive number), USD
+  rate         Float?    // annual interest rate 0..1
+  maturityDate DateTime?
+  owner        String?   // legal entity / individual
+  note         String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([category])
 }
 
 model Transaction {

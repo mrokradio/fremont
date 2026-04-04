@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsInt, IsNumber, IsOptional, IsString, Max, Min, MinLength } from 'class-validator';
+import { IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, Max, Min, MinLength } from 'class-validator';
+import { STRATEGY_KINDS } from '@fremont/shared';
 
 export class UpsertPositionDto {
   @IsString()
@@ -38,4 +39,12 @@ export class UpsertPositionDto {
   @IsOptional()
   @IsBoolean()
   liquid?: boolean;
+
+  @IsOptional()
+  @IsString()
+  owner?: string;
+
+  @IsOptional()
+  @IsIn([...STRATEGY_KINDS])
+  strategy?: string;
 }

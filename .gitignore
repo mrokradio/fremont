@@ -26,3 +26,7 @@ npm-debug.log*
 # Prisma
 prisma/migrations/dev/
 node_modules
+
+# Local-only seed scripts with sensitive client data
+apps/api/prisma/seed-*.ts
+!apps/api/prisma/seed.ts
