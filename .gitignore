@@ -1,5 +1,6 @@
 # Dependencies
 node_modules/
+.pnpm-store/
 
 # Environment variables
 .env
@@ -24,3 +25,4 @@ npm-debug.log*
 
 # Prisma
 prisma/migrations/dev/
+node_modules
