@@ -6,7 +6,6 @@ import type {
   PlanningScenario,
   PlanningScenarioWriteInput,
   Position,
-  StrategyBenchmark,
 } from '@fremont/shared';
 import { LOCAL_STORAGE_KEYS } from '@fremont/shared';
 import type { PlanEvent, PlanningAsset, PlanningAssetKind } from '../types/models';
@@ -97,7 +96,6 @@ export function PlanningView({
   positions = [],
 }: Props) {
   const [zoomStep, setZoomStep] = useState<ZoomStep>(1);
-  const [strategyBenchmarks, setStrategyBenchmarks] = useState<StrategyBenchmark[]>([]);
   const [dragMode, setDragMode] = useState<'asset' | 'event' | null>(null);
   type CashItem = { id: string; name: string; amount: number; start: number; end: number };
   type ModalState = {
@@ -333,9 +331,6 @@ export function PlanningView({
     } catch {}
   }, [remoteSyncEnabled, replaceScenarioId]);
 
-  useEffect(() => {
-    api.strategyBenchmarks().then(setStrategyBenchmarks).catch(() => {});
-  }, []);
 
   useEffect(() => {
     setTaxRateText((scenarioTaxRate * 100).toFixed(1));
@@ -727,44 +722,6 @@ export function PlanningView({
   };
 
   // Per-year compounded dollar growth from strategy positions using benchmark return rates.
-  // For years with actual data, uses actualReturnRate; beyond that, falls back to the
-  // strategy's most recent targetReturnRate.
-  const strategyGrowthByYear = useMemo<Map<number, number>>(() => {
-    const stratPositions = positions.filter((p) => p.tags?.includes('fremont-strategy') && (p.value ?? 0) > 0);
-    if (stratPositions.length === 0 || strategyBenchmarks.length === 0) return new Map();
-
-    // Latest known target rate per strategy for years beyond the benchmark data
-    const latestTarget = new Map<string, { rate: number; year: number }>();
-    for (const b of strategyBenchmarks) {
-      const prev = latestTarget.get(b.strategy);
-      if (prev === undefined || b.year >= prev.year) {
-        latestTarget.set(b.strategy, { rate: b.targetReturnRate, year: b.year });
-      }
-    }
-
-    const bmMap = new Map(strategyBenchmarks.map((b) => [`${b.strategy}|${b.year}`, b]));
-
-    // Track each strategy's accumulated value through the forecast years (compounding)
-    const accumulated = new Map(stratPositions.map((p) => [p.name, p.value ?? 0]));
-
-    const result = new Map<number, number>();
-    for (const year of years) {
-      let totalGrowth = 0;
-      for (const pos of stratPositions) {
-        const bm = bmMap.get(`${pos.name}|${year}`);
-        const rate = bm
-          ? year <= selectedYear ? bm.actualReturnRate : bm.targetReturnRate
-          : (latestTarget.get(pos.name)?.rate ?? 0);
-        const current = accumulated.get(pos.name) ?? 0;
-        const growth = current * rate;
-        accumulated.set(pos.name, current + growth);
-        totalGrowth += growth;
-      }
-      result.set(year, totalGrowth);
-    }
-    return result;
-  }, [positions, strategyBenchmarks, years, selectedYear]);
-
   // Aggregate position values for use in the simple-return-rate forecast path.
   // These are stable memos so they don't cause unnecessary recomputation.
   const totalPositionsValue = useMemo(
@@ -799,19 +756,10 @@ export function PlanningView({
       : 1;
 
     for (const year of years) {
-      // Strategy benchmark growth takes precedence when configured.
-      // Otherwise compound the position pool at the scenario's simple return rate.
       const rate = Math.max(0, returnRateAssumption);
-      let portfolioReturn: number;
-      let nonLiquidPositionGrowth: number;
-      if (strategyGrowthByYear.has(year)) {
-        portfolioReturn = strategyGrowthByYear.get(year) ?? 0;
-        nonLiquidPositionGrowth = 0; // existing strategy behavior: all growth applied to both NW and liquidity
-      } else {
-        portfolioReturn = posPool * rate;
-        nonLiquidPositionGrowth = portfolioReturn * (1 - liquidFraction);
-        posPool += portfolioReturn;
-      }
+      const portfolioReturn = posPool * rate;
+      const nonLiquidPositionGrowth = portfolioReturn * (1 - liquidFraction);
+      posPool += portfolioReturn;
       const income = incomeItems.reduce((sum, item) => (year >= item.start && year <= item.end ? sum + item.amount : sum), 0);
       const outflow = outflowItems.reduce((sum, item) => (year >= item.start && year <= item.end ? sum + item.amount : sum), 0);
       const taxRate = Math.max(0, Math.min(1, taxRateAssumption));
@@ -902,7 +850,7 @@ export function PlanningView({
     }
 
     return points;
-  }, [years, incomeItems, outflowItems, strategyGrowthByYear]);
+  }, [years, incomeItems, outflowItems]);
 
   const forecastYearly = useMemo(() => {
     return computeForecastYearly(
@@ -1373,7 +1321,7 @@ export function PlanningView({
                 }}
               />
               <div className="mt-1 text-xs text-slate-400">
-                {strategyBenchmarks.length > 0 ? 'Fallback (benchmarks active)' : totalPositionsValue > 0 ? `On ${fmtCompactCurrency(totalPositionsValue)} positions` : 'No positions entered'}
+                {totalPositionsValue > 0 ? `On ${fmtCompactCurrency(totalPositionsValue)} positions` : 'No positions entered'}
               </div>
             </div>
             <label className="rounded-md border border-slate-200 bg-white px-2 py-2 text-slate-700">
